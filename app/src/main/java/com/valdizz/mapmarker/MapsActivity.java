@@ -13,7 +13,7 @@ import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.View;
-import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -25,28 +25,30 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 
+import butterknife.BindView;
+import butterknife.ButterKnife;
 
 
-public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, GoogleMap.OnCameraIdleListener, GoogleMap.OnCameraMoveListener {
+public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, GoogleMap.OnCameraIdleListener, GoogleMap.OnCameraMoveStartedListener {
 
     private GoogleMap mMap;
     private FusedLocationProviderClient mFusedLocationProviderClient;
     private boolean mLocationPermissionGranted;
     private AddressResultReceiver mResultReceiver;
     private CameraPosition mCameraPosition;
-    private Marker mMarker;
     private Location mLastLocation;
+    @BindView(R.id.image_location) ImageView image_location;
+    @BindView(R.id.tv_address) TextView tv_address;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+        ButterKnife.bind(this);
         mFusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
         mResultReceiver = new AddressResultReceiver(new Handler());
 
@@ -54,35 +56,35 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mapFragment.getMapAsync(this);
     }
 
-    //Manipulates the map when it's available. This callback is triggered when the map is ready to be used.
+    // Manipulates the map when it's available. This callback is triggered when the map is ready to be used.
     @Override
     public void onMapReady(GoogleMap map) {
         mMap = map;
         mMap.setOnCameraIdleListener(this);
-        mMap.setOnCameraMoveListener(this);
-
-        // Use a custom info window adapter in the info window contents.
-        mMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
-            @Override
-            public View getInfoWindow(Marker marker) {
-                View infoWindow = getLayoutInflater().inflate(R.layout.custom_info_contents, (FrameLayout) findViewById(R.id.map), false);
-                TextView address = ((TextView) infoWindow.findViewById(R.id.address));
-                address.setText(marker.getTitle());
-                return infoWindow;
-            }
-
-            @Override
-            public View getInfoContents(Marker marker) {
-                return null;
-            }
-        });
+        mMap.setOnCameraMoveStartedListener(this);
 
         getLocationPermission();
         updateLocationUI();
         getDeviceLocation();
     }
 
-     //Gets the current location of the device, and positions the map's camera.
+    // Save current state.
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putParcelable(Constants.LAST_LOCATION_KEY, mLastLocation);
+        outState.putParcelable(Constants.CAMERA_POSITION_KEY, mCameraPosition);
+    }
+
+    // Restore last state.
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        mLastLocation = savedInstanceState.getParcelable(Constants.LAST_LOCATION_KEY);
+        mCameraPosition = savedInstanceState.getParcelable(Constants.CAMERA_POSITION_KEY);
+    }
+
+    // Gets the current location of the device, and positions the map's camera.
     private void getDeviceLocation() {
         try {
             if (mLocationPermissionGranted) {
@@ -94,7 +96,13 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                             // Set the map's camera position to the current location of the device.
                             mLastLocation = task.getResult();
                             fetchCurrentAddress();
-                            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude()), Constants.DEFAULT_ZOOM));
+                            if (mCameraPosition == null) {
+                                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude()), Constants.DEFAULT_ZOOM));
+                            }
+                            else {
+                                mMap.moveCamera(CameraUpdateFactory.newCameraPosition(mCameraPosition));
+                            }
+                            image_location.setVisibility(View.VISIBLE);
                         } else {
                             Log.e(Constants.TAG, "Location exception: %s", task.getException());
                             mMap.getUiSettings().setMyLocationButtonEnabled(false);
@@ -155,25 +163,9 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         if (mMap == null) {
             return;
         }
-        if (mLocationPermissionGranted && mLastLocation != null) {
-            LatLng position = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());;
-            if (mMarker == null) {
-                mMarker = mMap.addMarker(new MarkerOptions()
-                        .title(address)
-                        .position(position));
-            }
-            else {
-                mMarker.setTitle(address);
-                mMarker.setPosition(position);
-            }
-            // The info window is located at the bottom of the marker.
-            mMarker.setInfoWindowAnchor(0.5f, 1.6f);
-            if (address.length()==0){
-                mMarker.hideInfoWindow();
-            }
-            else {
-                mMarker.showInfoWindow();
-            }
+        if (mLocationPermissionGranted) {
+            tv_address.setVisibility(View.VISIBLE);
+            tv_address.setText(address);
         } else {
             Log.i(Constants.TAG, "The user did not grant location permission.");
             getLocationPermission();
@@ -191,15 +183,10 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         }
     }
 
-    // Is invoked multiple times while the camera is moving or the user is interacting with the touch screen.
     @Override
-    public void onCameraMove() {
-        if (mLastLocation != null) {
-            mCameraPosition = mMap.getCameraPosition();
-            mLastLocation.setLatitude(mCameraPosition.target.latitude);
-            mLastLocation.setLongitude(mCameraPosition.target.longitude);
-            showCurrentAddress("");
-        }
+    public void onCameraMoveStarted(int i) {
+        tv_address.setVisibility(View.GONE);
+        tv_address.setText("");
     }
 
     // Start service when the user takes an action that requires a geocoding address lookup.

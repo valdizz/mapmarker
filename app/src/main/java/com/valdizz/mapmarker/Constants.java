@@ -9,7 +9,9 @@ public final class Constants {
     public static final String RESULT_DATA_KEY = "com.valdizz.mapmarker.RESULT_DATA_KEY";
     public static final String LOCATION_DATA_EXTRA = "com.valdizz.mapmarker.LOCATION_DATA_EXTRA";
 
-
     public static final int DEFAULT_ZOOM = 15;
     public static final int PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
+
+    public static final String LAST_LOCATION_KEY = "last_location";
+    public static final String CAMERA_POSITION_KEY = "camera_position";
 }
